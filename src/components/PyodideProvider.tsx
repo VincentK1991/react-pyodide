@@ -18,6 +18,7 @@ interface PyodideContextType {
     stdout?: string;
     error?: string;
   };
+  installPackage: (packageName: string) => Promise<void>;
 }
 
 const PyodideContext = createContext<PyodideContextType | undefined>(undefined);
@@ -34,10 +35,14 @@ interface PyodideProviderProps {
   children: ReactNode;
 }
 
+// List of common packages to preload
+const COMMON_PACKAGES = ["numpy", "pandas"];
+
 export const PyodideProvider = ({ children }: PyodideProviderProps) => {
   const [pyodide, setPyodide] = useState<PyodideInterface | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<Error | null>(null);
+  const [loadedPackages, setLoadedPackages] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     async function initPyodide() {
@@ -57,8 +62,28 @@ export const PyodideProvider = ({ children }: PyodideProviderProps) => {
           print("Python environment initialized")
         `);
 
+        // Initialize micropip
+        await pyodideInstance.loadPackagesFromImports(`
+          import micropip
+        `);
+
         console.log("Pyodide loaded successfully!");
         setPyodide(pyodideInstance);
+
+        // Preload common packages
+        try {
+          console.log("Preloading common packages...");
+          await pyodideInstance.loadPackagesFromImports(`
+            import numpy
+            import pandas
+          `);
+          setLoadedPackages(new Set([...loadedPackages, ...COMMON_PACKAGES]));
+          console.log("Common packages loaded successfully!");
+        } catch (packageErr) {
+          console.warn("Some packages failed to preload:", packageErr);
+          // Continue even if package loading fails
+        }
+
         setLoading(false);
       } catch (err) {
         console.error("Error loading Pyodide:", err);
@@ -69,6 +94,30 @@ export const PyodideProvider = ({ children }: PyodideProviderProps) => {
 
     initPyodide();
   }, []);
+
+  const installPackage = async (packageName: string) => {
+    if (!pyodide) {
+      throw new Error("Pyodide is not initialized");
+    }
+
+    if (loadedPackages.has(packageName)) {
+      console.log(`Package ${packageName} is already loaded`);
+      return;
+    }
+
+    try {
+      console.log(`Installing package: ${packageName}`);
+      await pyodide.runPythonAsync(`
+        import micropip
+        await micropip.install("${packageName}")
+      `);
+      setLoadedPackages(new Set([...loadedPackages, packageName]));
+      console.log(`Package ${packageName} installed successfully`);
+    } catch (err) {
+      console.error(`Error installing package ${packageName}:`, err);
+      throw err;
+    }
+  };
 
   const runPython = async (code: string) => {
     if (!pyodide) {
@@ -96,24 +145,66 @@ export const PyodideProvider = ({ children }: PyodideProviderProps) => {
       await pyodide.runPythonAsync(`
         # Clear globals but keep important modules
         for key in list(globals().keys()):
-            if key not in ['sys', 'js', '__name__', '__doc__', 'io', 'StdoutCatcher']:
+            if key not in ['sys', 'js', '__name__', '__doc__', 'io', 'StdoutCatcher', 'micropip']:
                 del globals()[key]
       `);
 
-      // Run the user's code
-      const result = await pyodide.runPythonAsync(code);
+      // Try to run the code, and handle missing package errors
+      try {
+        // Run the user's code
+        const result = await pyodide.runPythonAsync(code);
 
-      // Get the captured stdout content
-      stdoutContent = await pyodide.runPythonAsync(`
-        output = sys.stdout.getvalue()
-        sys.stdout = sys.__stdout__  # Reset stdout to default
-        output
-      `);
+        // Get the captured stdout content
+        stdoutContent = await pyodide.runPythonAsync(`
+          output = sys.stdout.getvalue()
+          sys.stdout = sys.__stdout__  # Reset stdout to default
+          output
+        `);
 
-      return {
-        result,
-        stdout: stdoutContent,
-      };
+        return {
+          result,
+          stdout: stdoutContent,
+        };
+      } catch (err) {
+        // Check if the error is about a missing module
+        const errorStr = String(err);
+        if (errorStr.includes("ModuleNotFoundError: No module named")) {
+          // Extract the module name from the error message
+          const moduleMatch = errorStr.match(/No module named '([^']+)'/);
+          if (moduleMatch && moduleMatch[1]) {
+            const moduleName = moduleMatch[1];
+
+            // Try to install the missing package
+            try {
+              stdoutContent += `\nAttempting to install missing package: ${moduleName}...\n`;
+              await installPackage(moduleName);
+              stdoutContent += `Package ${moduleName} installed successfully. Rerunning your code...\n`;
+
+              // Try running the code again after installing the package
+              const result = await pyodide.runPythonAsync(code);
+
+              // Get the updated stdout content
+              const newStdout = await pyodide.runPythonAsync(`
+                output = sys.stdout.getvalue()
+                sys.stdout = sys.__stdout__  # Reset stdout to default
+                output
+              `);
+
+              return {
+                result,
+                stdout: stdoutContent + newStdout,
+              };
+            } catch (installErr) {
+              throw new Error(
+                `Failed to install package ${moduleName}: ${installErr}`
+              );
+            }
+          }
+        }
+
+        // If it's not a missing module error or we couldn't handle it, rethrow
+        throw err;
+      }
     } catch (err) {
       console.error("Error running Python code:", err);
       throw err;
@@ -159,6 +250,7 @@ export const PyodideProvider = ({ children }: PyodideProviderProps) => {
     error,
     runPython,
     runJavaScript,
+    installPackage,
   };
 
   return (

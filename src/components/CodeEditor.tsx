@@ -15,7 +15,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
   height = "400px",
   onChange,
 }) => {
-  const { loading, runPython, runJavaScript } = usePyodide();
+  const { loading, runPython, runJavaScript, installPackage } = usePyodide();
   const [language, setLanguage] = useState<"python" | "javascript">(
     defaultLanguage
   );
@@ -26,6 +26,9 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
   );
   const [output, setOutput] = useState<string>("");
   const [isExecuting, setIsExecuting] = useState<boolean>(false);
+  const [packageName, setPackageName] = useState<string>("");
+  const [isInstallingPackage, setIsInstallingPackage] =
+    useState<boolean>(false);
 
   useEffect(() => {
     // Set initial code based on the language
@@ -49,6 +52,31 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
 
   const handleLanguageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setLanguage(e.target.value as "python" | "javascript");
+  };
+
+  const handlePackageNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setPackageName(e.target.value);
+  };
+
+  const handleInstallPackage = async () => {
+    if (!packageName.trim() || loading || isInstallingPackage) return;
+
+    setIsInstallingPackage(true);
+    setOutput(`Installing package: ${packageName}...`);
+
+    try {
+      await installPackage(packageName);
+      setOutput(`Package ${packageName} installed successfully!`);
+      setPackageName("");
+    } catch (error) {
+      setOutput(
+        `Error installing package: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    } finally {
+      setIsInstallingPackage(false);
+    }
   };
 
   const executeCode = async () => {
@@ -156,6 +184,29 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
           automaticLayout: true,
         }}
       />
+      {language === "python" && (
+        <div className="flex items-center p-2 bg-gray-700 border-t border-gray-600">
+          <input
+            type="text"
+            value={packageName}
+            onChange={handlePackageNameChange}
+            placeholder="Enter package name to install"
+            className="flex-1 px-3 py-1 text-sm bg-gray-800 text-white border border-gray-600 rounded-l outline-none"
+            disabled={loading || isInstallingPackage}
+          />
+          <button
+            onClick={handleInstallPackage}
+            disabled={loading || isInstallingPackage || !packageName.trim()}
+            className={`px-3 py-1 rounded-r text-white text-sm font-medium ${
+              loading || isInstallingPackage || !packageName.trim()
+                ? "bg-gray-500 cursor-not-allowed"
+                : "bg-blue-600 hover:bg-blue-700"
+            }`}
+          >
+            {isInstallingPackage ? "Installing..." : "Install Package"}
+          </button>
+        </div>
+      )}
       {output && (
         <div className="p-4 bg-gray-100 border-t border-gray-300 max-h-48 overflow-auto">
           <h3 className="text-sm font-semibold mb-2 text-gray-700">Output:</h3>
