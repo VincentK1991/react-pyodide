@@ -8,6 +8,10 @@ import {
 import { loadPyodide } from "pyodide";
 import type { PyodideInterface } from "pyodide";
 
+// Move constants to a separate file
+// List of common packages to preload
+const COMMON_PACKAGES = ["numpy", "pandas"];
+
 interface PyodideContextType {
   pyodide: PyodideInterface | null;
   loading: boolean;
@@ -34,9 +38,6 @@ export const usePyodide = () => {
 interface PyodideProviderProps {
   children: ReactNode;
 }
-
-// List of common packages to preload
-const COMMON_PACKAGES = ["numpy", "pandas"];
 
 export const PyodideProvider = ({ children }: PyodideProviderProps) => {
   const [pyodide, setPyodide] = useState<PyodideInterface | null>(null);
@@ -77,7 +78,10 @@ export const PyodideProvider = ({ children }: PyodideProviderProps) => {
             import numpy
             import pandas
           `);
-          setLoadedPackages(new Set([...loadedPackages, ...COMMON_PACKAGES]));
+          // Use functional update to avoid dependency on loadedPackages
+          setLoadedPackages(
+            (prevPackages) => new Set([...prevPackages, ...COMMON_PACKAGES])
+          );
           console.log("Common packages loaded successfully!");
         } catch (packageErr) {
           console.warn("Some packages failed to preload:", packageErr);
@@ -93,7 +97,7 @@ export const PyodideProvider = ({ children }: PyodideProviderProps) => {
     }
 
     initPyodide();
-  }, []);
+  }, []); // No dependencies needed with functional updates
 
   const installPackage = async (packageName: string) => {
     if (!pyodide) {
@@ -111,7 +115,10 @@ export const PyodideProvider = ({ children }: PyodideProviderProps) => {
         import micropip
         await micropip.install("${packageName}")
       `);
-      setLoadedPackages(new Set([...loadedPackages, packageName]));
+      // Use functional update to avoid dependency issues
+      setLoadedPackages(
+        (prevPackages) => new Set([...prevPackages, packageName])
+      );
       console.log(`Package ${packageName} installed successfully`);
     } catch (err) {
       console.error(`Error installing package ${packageName}:`, err);
@@ -214,7 +221,6 @@ export const PyodideProvider = ({ children }: PyodideProviderProps) => {
   const runJavaScript = (code: string) => {
     try {
       // Create a function from the code string and execute it
-      // eslint-disable-next-line no-new-func
       const result = new Function(`
         try {
           // Capture console.log output
