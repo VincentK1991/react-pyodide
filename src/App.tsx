@@ -3,6 +3,7 @@ import CodeEditor, { CodeExample } from "./components/CodeEditor";
 import { usePyodide } from "./components/PyodideProvider";
 import { apiService } from "./services/api";
 import ChatBox from "./components/ChatBox";
+import FunctionExamples from "./components/FunctionExamples";
 
 // Example definitions
 const statisticalExamples: CodeExample[] = [
@@ -31,6 +32,8 @@ const statisticalExamples: CodeExample[] = [
   },
 ];
 
+type TabType = "codeEditor" | "functionExamples";
+
 function App() {
   const { loading } = usePyodide();
   const [serverStatus, setServerStatus] = useState<
@@ -40,6 +43,7 @@ function App() {
   const [isChecking, setIsChecking] = useState<boolean>(false);
   const [showAIChat, setShowAIChat] = useState<boolean>(false);
   const [selectedExample, setSelectedExample] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<TabType>("codeEditor");
 
   const checkServerHealth = async () => {
     setIsChecking(true);
@@ -58,10 +62,18 @@ function App() {
 
   const loadExample = async (example: CodeExample) => {
     try {
-      const response = await fetch(`/src/examples/${example.file}`);
+      // Try to fetch from the examples directory first
+      let response = await fetch(`/src/examples/${example.file}`);
+
+      // If that fails, try the direct path
+      if (!response.ok) {
+        response = await fetch(`/examples/${example.file}`);
+      }
+
       if (!response.ok) {
         throw new Error(`Failed to load example: ${response.statusText}`);
       }
+
       const code = await response.text();
       setSelectedExample(code);
       return code;
@@ -119,37 +131,68 @@ function App() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div>
-          <CodeEditor
-            defaultLanguage="python"
-            height="500px"
-            initialCode={selectedExample || undefined}
-            examples={statisticalExamples}
-            onExampleSelect={loadExample}
-          />
-
-          <div className="mt-4 text-left bg-gray-50 p-4 rounded-md border border-gray-200">
-            <h3 className="text-lg font-medium text-gray-800 mb-2">
-              About Statistical Examples
-            </h3>
-            <p className="text-sm text-gray-600 mb-2">
-              The examples dropdown includes statistical analysis examples using
-              NumPy, pandas, and statsmodels. Select an example, click "Run" to
-              execute it, and see the results in the output panel.
-            </p>
-            <p className="text-sm text-gray-600">
-              For examples with matplotlib visualizations, the plots will be
-              displayed directly in the browser. View the source code in the{" "}
-              <a
-                href="https://github.com/yourusername/pyodide-react-app/tree/main/src/examples"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-blue-500 hover:underline"
-              >
-                examples directory
-              </a>
-              .
-            </p>
+          {/* Tab Navigation */}
+          <div className="flex border-b border-gray-300 mb-4">
+            <button
+              className={`py-2 px-4 font-medium text-sm ${
+                activeTab === "codeEditor"
+                  ? "border-b-2 border-blue-500 text-blue-600"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
+              onClick={() => setActiveTab("codeEditor")}
+            >
+              Code Editor
+            </button>
+            <button
+              className={`py-2 px-4 font-medium text-sm ${
+                activeTab === "functionExamples"
+                  ? "border-b-2 border-blue-500 text-blue-600"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
+              onClick={() => setActiveTab("functionExamples")}
+            >
+              Function Examples
+            </button>
           </div>
+
+          {/* Tab Content */}
+          {activeTab === "codeEditor" ? (
+            <>
+              <CodeEditor
+                defaultLanguage="python"
+                height="500px"
+                initialCode={selectedExample || undefined}
+                examples={statisticalExamples}
+                onExampleSelect={loadExample}
+              />
+
+              <div className="mt-4 text-left bg-gray-50 p-4 rounded-md border border-gray-200">
+                <h3 className="text-lg font-medium text-gray-800 mb-2">
+                  About Statistical Examples
+                </h3>
+                <p className="text-sm text-gray-600 mb-2">
+                  The examples dropdown includes statistical analysis examples
+                  using NumPy, pandas, and statsmodels. Select an example, click
+                  "Run" to execute it, and see the results in the output panel.
+                </p>
+                <p className="text-sm text-gray-600">
+                  For examples with matplotlib visualizations, the plots will be
+                  displayed directly in the browser. View the source code in the{" "}
+                  <a
+                    href="https://github.com/yourusername/pyodide-react-app/tree/main/src/examples"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-500 hover:underline"
+                  >
+                    examples directory
+                  </a>
+                  .
+                </p>
+              </div>
+            </>
+          ) : (
+            <FunctionExamples />
+          )}
         </div>
 
         <div className="flex flex-col">
